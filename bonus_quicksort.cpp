@@ -221,32 +221,35 @@ void addToHashTable(const record& newRec, const int& index)
  */
 void swapHashTableRecords(const int& pos_one, const int& pos_two)
 {
-	if ( ( pos_one < 0 || pos_one > NUMBER_OF_HASH_CELLS ) || ( pos_two < 0 || pos_two > NUMBER_OF_HASH_CELLS ) )
+	if(pos_one != pos_two)
 	{
-		cout << "INVALID SWAP" << endl;
-		cout << pos_one << endl;
-		cout << pos_two << endl;
-	}
-	else
-	{
-		/* Get pointer to the hash table record */
-		hashTableCell* hashTableCellOnePtr = &hashTable.at(pos_one); 
-		hashTableCell* hashTableCellTwoPtr = &hashTable.at(pos_two); 
+		if ( ( pos_one < 0 || pos_one > NUMBER_OF_HASH_CELLS ) || ( pos_two < 0 || pos_two > NUMBER_OF_HASH_CELLS ) )
+		{
+			cout << "INVALID SWAP" << endl;
+			cout << pos_one << endl;
+			cout << pos_two << endl;
+		}
+		else
+		{
+			/* Get pointer to the hash table record */
+			hashTableCell* hashTableCellOnePtr = &hashTable.at(pos_one); 
+			hashTableCell* hashTableCellTwoPtr = &hashTable.at(pos_two); 
 
-		/**
-		 * TODO: lock the mutex protecting the hashtable cell (by calling lockCell()). 
-		 */
-		hashTableCellOnePtr->lockCell();
-		hashTableCellTwoPtr->lockCell();
+			/**
+			 * TODO: lock the mutex protecting the hashtable cell (by calling lockCell()). 
+			 */
+			hashTableCellOnePtr->lockCell();
+			hashTableCellTwoPtr->lockCell();
 
-		swap(*hashTableCellOnePtr,*hashTableCellTwoPtr);
-		
-		/**
-		 * TODO: release mutex of the cell. Hint: call unlockCell() to release
-		 * mutex protecting the cell.
-		 */
-		hashTableCellOnePtr->unlockCell();
-		hashTableCellTwoPtr->unlockCell();
+			swap(*hashTableCellOnePtr,*hashTableCellTwoPtr);
+			
+			/**
+			 * TODO: release mutex of the cell. Hint: call unlockCell() to release
+			 * mutex protecting the cell.
+			 */
+			hashTableCellOnePtr->unlockCell();
+			hashTableCellTwoPtr->unlockCell();
+		}
 	}
 }
 
@@ -385,69 +388,77 @@ void* threadPoolFunc(void* arg)
 	/* Just a variable to store the id of the requested record. */
 	position pos; 
 	
-	while(!flag)
-	{
-		/* TODO: Lock the mutex protecting the condition variable on which threads
-		* sleep. The name of the mutex depends on what you declared it to be above.
-		*/
-		pthread_mutex_lock(&threadPoolMutex);
+	/* TODO: Lock the mutex protecting the condition variable on which threads
+	* sleep. The name of the mutex depends on what you declared it to be above.
+	*/
+	pthread_mutex_lock(&threadPoolMutex);
 
-		/* Remove the requsted record id from the idsToLookUp list. */
-		pos = getPositionFromLookUp();
-		
-		while(pos.low != -1 && !flag)
+	/* Remove the requsted record id from the idsToLookUp list. */
+	pos = getPositionFromLookUp();
+	
+	while(pos.low != -1 && !flag)
+	{			
+		if(pos.high - pos.low > 0)
 		{
-			pthread_cond_wait(&threadPoolCond, &threadPoolMutex);
+			int pivot = pos.high;
+			int leftBoundary = pos.low;
+			int rightBoundary = pos.high;
+			cout << "-----" << endl;
+			cout << "Pivot: " << pivot << " leftBoundary: " << leftBoundary << " rightBoundary: " << rightBoundary << endl;
 			
-			if(pos.high - pos.low > 1)
+			while(leftBoundary <= rightBoundary)
 			{
-				int pivot = pos.high;
-				int leftBoundary = pos.low;
-				int rightBoundary = pos.high;
-				cout << "-----" << endl;
-				cout << "Pivot: " << pivot << " leftBoundary: " << leftBoundary << " rightBoundary: " << rightBoundary << endl;
 				
-				while(leftBoundary <= rightBoundary)
+				while( getHashTableRecord(leftBoundary).id < getHashTableRecord(pivot).id )
 				{
-					while( getHashTableRecord(leftBoundary).id < getHashTableRecord(pivot).id )
+					leftBoundary++;
+					if(leftBoundary == pivot)
 					{
-						leftBoundary++;
-						//cout << "leftBoundary++ : " << leftBoundary << endl;
+						continue;
 					}
-					while( getHashTableRecord(rightBoundary).id > getHashTableRecord(pivot).id )
+					//cout << "leftBoundary++ : " << leftBoundary << endl;
+				}
+				while( getHashTableRecord(rightBoundary).id > getHashTableRecord(pivot).id )
+				{
+					rightBoundary--;
+					if(rightBoundary == pivot)
 					{
-						rightBoundary--;
-						//cout << "rightBoundary-- : " << rightBoundary << endl;
+						continue;
 					}
-					if(leftBoundary <= rightBoundary)
-					{
-						swapHashTableRecords(leftBoundary, rightBoundary);
-						cout << "Swapped: " << leftBoundary << " with " << rightBoundary << endl;
-						leftBoundary++;
-						rightBoundary--;
-					}
-				}		
-				
-				pos.low = 0;
-				pos.high = rightBoundary;
-				addPositionToLookUp(pos);
-				cout << "leftBoundary: " << pos.low << " rightBoundary: " << pos.high << endl;
+					//cout << "rightBoundary-- : " << rightBoundary << endl;
+				}
+				if(leftBoundary <= rightBoundary)
+				{
+					swapHashTableRecords(leftBoundary, rightBoundary);
+					cout << "Swapped: " << leftBoundary << " with " << rightBoundary << endl;
+					leftBoundary++;
+					rightBoundary--;
+				}
+			}		
 			
-				pos.low = leftBoundary;
-				pos.high = NUMBER_OF_HASH_CELLS - 1;
-				addPositionToLookUp(pos);
-				cout << "leftBoundary: " << pos.low << " rightBoundary: " << pos.high << endl;
-			}
-		}
+			pos.low = 0;
+			pos.high = rightBoundary;
+			addPositionToLookUp(pos);
+			cout << "leftBoundary: " << pos.low << " rightBoundary: " << pos.high << endl;
 		
-
-		/* If getIdsToLookUp() has returned a -1, it means there are no records to 
-		 * look up. In this case, the thread should sleep on the condition variable.
-		 */
-
-		pthread_mutex_unlock(&threadPoolMutex);
-		//cout << "id: " << rec.id << " fName: " << rec.firstName << " lName: " << rec.lastName << endl;
+			pos.low = leftBoundary;
+			pos.high = NUMBER_OF_HASH_CELLS - 1;
+			addPositionToLookUp(pos);
+			cout << "leftBoundary: " << pos.low << " rightBoundary: " << pos.high << endl;
+			
+			pthread_cond_wait(&threadPoolCond, &threadPoolMutex);
+		}
 	}
+	
+	
+	
+
+	/* If getIdsToLookUp() has returned a -1, it means there are no records to 
+	 * look up. In this case, the thread should sleep on the condition variable.
+	 */
+
+	pthread_mutex_unlock(&threadPoolMutex);
+	//cout << "id: " << rec.id << " fName: " << rec.firstName << " lName: " << rec.lastName << endl;
 }
 
 /**
